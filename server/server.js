@@ -20,7 +20,8 @@ const io = new socketIo.Server(server, {
             'http://localhost:80',
             'http://localhost:5175',
             'http://localhost:4173',
-            'http://localhost'
+            'http://localhost',
+            'http://35.238.181.235'
         ],
         methods: ["GET", "POST"],
         credentials: true
@@ -34,7 +35,8 @@ app.use(cors({
         'http://localhost:80',
         'http://localhost:5175',
         'http://localhost:4173',
-        'http://localhost'
+        'http://localhost',
+        'http://35.238.181.235'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
