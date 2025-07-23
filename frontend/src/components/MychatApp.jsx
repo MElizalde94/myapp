@@ -7,7 +7,8 @@ const socket = io(import.meta.env.VITE_BACKEND_URL, {
   transports: ['websocket', 'polling'],
 });
 
-function MychatApp() { // Renamed from App to MychatApp
+// MychatApp now accepts an 'onBack' prop
+function MychatApp({ onBack }) {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [username, setUsername] = useState('');
@@ -146,6 +147,21 @@ function MychatApp() { // Renamed from App to MychatApp
               Register
             </button>
           </div>
+          {/* Back button for login/register view, styled as an old-school button */}
+          <button
+            type="button"
+            onClick={onBack}
+            className="
+              mt-4 bg-gray-700 text-green-400 px-4 py-2 rounded-md
+              border-t-2 border-l-2 border-gray-600
+              border-b-2 border-r-2 border-gray-900
+              hover:bg-gray-600 hover:border-gray-900 hover:border-b-gray-600 hover:border-r-gray-600
+              transition-all duration-100 ease-in-out
+              cursor-pointer
+            "
+          >
+            &lt;-- Back to Main
+          </button>
         </form>
       </div>
     );
@@ -153,9 +169,27 @@ function MychatApp() { // Renamed from App to MychatApp
 
   return (
     <div className="flex flex-col h-[80vh] border border-gray-300 p-4 rounded-lg shadow-xl max-w-4xl mx-auto my-8 bg-white">
-      <h1 className="text-3xl font-bold mb-4 text-center">
-        Welcome, {username}! (Room: {room})
-      </h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-3xl font-bold text-center flex-grow">
+          Welcome, {username}! (Room: {room})
+        </h1>
+        {/* Back button for chat view, styled as an old-school button */}
+        <button
+          type="button"
+          onClick={onBack}
+          className="
+            bg-gray-700 text-green-400 px-4 py-2 rounded-md
+            border-t-2 border-l-2 border-gray-600
+            border-b-2 border-r-2 border-gray-900
+            hover:bg-gray-600 hover:border-gray-900 hover:border-b-gray-600 hover:border-r-gray-600
+            transition-all duration-100 ease-in-out
+            cursor-pointer
+            ml-4
+          "
+        >
+          &lt;-- Back to Main
+        </button>
+      </div>
       <div className="flex-grow overflow-y-auto border-b border-gray-200 pb-2 mb-4 text-left space-y-2">
         {messages.map((msg, index) => (
           <div
