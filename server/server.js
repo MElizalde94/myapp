@@ -2,14 +2,14 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
-//const dotenv = require('dotenv');
+const dotenv = require('dotenv');
 const cors = require('cors');
 
 // Import your Mongoose models
 const users = require('./models/User'); // Assuming you'll need this for sender info if populating
 const Message = require('./models/Message'); // <<< NEW: Import Message model
 
-//dotenv.config();
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);

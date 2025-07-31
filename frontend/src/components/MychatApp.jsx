@@ -19,28 +19,33 @@ function MychatApp({ onBack }) {
   const [room, setRoom] = useState('general');
 
   useEffect(() => {
+    // Listener for incoming chat messages
     socket.on('message', (msg) => {
       setMessages((prevMessages) => [...prevMessages, msg]);
     });
 
+    // Listener for historical messages when joining a room
     socket.on('historicalMessages', (msgs) => {
       setMessages(msgs);
     });
 
+    // Cleanup function to remove event listeners when component unmounts
     return () => {
       socket.off('message');
       socket.off('historicalMessages');
     };
-  }, []);
+  }, []); // Empty dependency array means this effect runs once on mount
 
   useEffect(() => {
+    // Join a room when the user logs in and a room is set
     if (isLoggedIn && room) {
       socket.emit('joinRoom', room);
     }
-  }, [isLoggedIn, room]);
+  }, [isLoggedIn, room]); // Reruns when isLoggedIn or room changes
 
+  // Handles sending a chat message
   const handleSendMessage = (e) => {
-    e.preventDefault();
+    e.preventDefault(); // Prevent default form submission behavior
     if (message.trim() && username && userId) {
       const msgData = {
         userId: userId,
@@ -48,20 +53,21 @@ function MychatApp({ onBack }) {
         content: message,
         room: room,
       };
-      socket.emit('chatMessage', msgData);
-      setMessage('');
+      socket.emit('chatMessage', msgData); // Emit the message to the server
+      setMessage(''); // Clear the message input field
     }
   };
 
+  // Handles user login
   const handleLogin = async (e) => {
-    e.preventDefault();
+    e.preventDefault(); // Prevent default form submission behavior
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // ✅ Required for CORS to work with credentials
+        credentials: 'include', // Required for CORS to work with credentials
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const data = await response.json();
@@ -70,47 +76,24 @@ function MychatApp({ onBack }) {
         setUsername(data.username);
         setUserId(data._id);
         setIsLoggedIn(true);
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('token', data.token); // Store token (though not used directly in this snippet)
       } else {
-        // Using a custom message box instead of alert()
         console.error(data.message || 'Login failed');
-        // You might want to implement a custom modal or toast notification here
+        // In a real app, you'd show a user-friendly error message here (e.g., a toast or modal)
       }
     } catch (error) {
       console.error('Login error:', error);
-      // Using a custom message box instead of alert()
-      // You might want to implement a custom modal or toast notification here
+      // In a real app, you'd show a user-friendly error message here
     }
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // ✅ Required here too
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        console.log('Registration successful:', data);
-        // Using a custom message box instead of alert()
-        // You might want to implement a custom modal or toast notification here
-      } else {
-        // Using a custom message box instead of alert()
-        console.error(data.message || 'Registration failed');
-        // You might want to implement a custom modal or toast notification here
-      }
-    } catch (error) {
-      console.error('Registration error:', error);
-      // Using a custom message box instead of alert()
-      // You might want to implement a custom modal or toast notification here
-    }
+  // Handles the "Hello" button click
+  const handleHelloClick = () => {
+    console.log('helloo!!!'); // Log message to console instead of alert()
+    // In a real app, you could show a custom modal or toast notification here
   };
 
+  // Render login/register form if not logged in
   if (!isLoggedIn) {
     return (
       <div className="p-5 border border-gray-300 rounded-lg w-72 mx-auto mt-12 text-center shadow-lg">
@@ -139,12 +122,13 @@ function MychatApp({ onBack }) {
             >
               Login
             </button>
+            {/* Replaced Register button with Hello button */}
             <button
               type="button"
-              onClick={handleRegister}
+              onClick={handleHelloClick}
               className="flex-1 p-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
             >
-              Register
+              Hello
             </button>
           </div>
           {/* Back button for login/register view, styled as an old-school button */}
@@ -163,10 +147,13 @@ function MychatApp({ onBack }) {
             &lt;-- Back to Main
           </button>
         </form>
+        {/* Under Construction message */}
+        <p className="mt-4 text-sm text-gray-500">Under Construction</p>
       </div>
     );
   }
 
+  // Render chat interface if logged in
   return (
     <div className="flex flex-col h-[80vh] border border-gray-300 p-4 rounded-lg shadow-xl max-w-4xl mx-auto my-8 bg-white">
       <div className="flex justify-between items-center mb-4">
