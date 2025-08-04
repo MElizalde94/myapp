@@ -201,6 +201,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    // NEW: Handle a specific 'logout' event from the client
+    socket.on('logout', () => {
+        console.log(`[Socket.IO] User explicitly logged out from socket: ${socket.id}`);
+        // The cleanup logic is identical to a normal disconnect.
+        const userLoggedOut = usersOnline.get(socket.id);
+        if (userLoggedOut) {
+            const roomToUpdate = userLoggedOut.currentRoom;
+            usersOnline.delete(socket.id);
+            console.log(`[Socket.IO] Removed ${userLoggedOut.username} from online users.`);
+            // Inform others in the room that this user has left
+            if (roomToUpdate) {
+                emitOnlineUsers(roomToUpdate);
+            }
+        }
+    });
+
     // When a user disconnects from the socket
     socket.on('disconnect', () => {
         console.log(`[Socket.IO] User disconnected: ${socket.id}`);

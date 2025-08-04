@@ -16,99 +16,107 @@ function MychatApp({ onBack }) {
   const [loginPassword, setLoginPassword] = useState('');
   const [room, setRoom] = useState('general');
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const [userSetOnBackend, setUserSetOnBackend] = useState(false); // NEW STATE: Tracks if user info is sent & acknowledged by backend
+  const [userSetOnBackend, setUserSetOnBackend] = useState(false);
 
+  // Effect for setting up Socket.IO listeners (runs once on mount)
   useEffect(() => {
-    // Listener for incoming chat messages
     socket.on('message', (msg) => {
       setMessages((prevMessages) => [...prevMessages, msg]);
     });
 
-    // Listener for historical messages when joining a room
     socket.on('historicalMessages', (msgs) => {
       setMessages(msgs);
     });
 
-    // NEW: Listener for the online users list from the server
     socket.on('usersOnline', (users) => {
-      console.log('Frontend: Received online users:', users); // Debug log
+      console.log('Frontend: Received online users:', users);
       setOnlineUsers(users);
     });
 
-    // NEW: Listener for authentication required messages from backend
     socket.on('authRequired', (msg) => {
         console.error("Frontend: Backend requires authentication:", msg);
-        // Reset login state if backend indicates authentication is missing
-        setIsLoggedIn(false);
-        setUserId('');
-        setUsername('');
-        setUserSetOnBackend(false); // Reset this flag too
-        alert(msg + " Please log in again."); // User-friendly alert
+        // If backend says auth is required, force client-side logout
+        handleLogout(false); // Call handleLogout without navigating back immediately
+        alert(msg + " Please log in again.");
     });
 
     // Cleanup function to remove event listeners when component unmounts
     return () => {
       socket.off('message');
       socket.off('historicalMessages');
-      socket.off('usersOnline'); // Cleanup the new listener
-      socket.off('authRequired'); // Cleanup authRequired listener
+      socket.off('usersOnline');
+      socket.off('authRequired');
     };
-  }, []); // Empty dependency array means this effect runs once on mount
+  }, []);
 
-  // NEW useEffect: Emit user info to the backend after successful login, and wait for acknowledgment
+  // NEW EFFECT: Attempt to re-authenticate user from localStorage on component mount
   useEffect(() => {
-    // Only emit if logged in, user details are available, and info hasn't been set on backend yet
+    const storedToken = localStorage.getItem('token');
+    const storedUserId = localStorage.getItem('userId');
+    const storedUsername = localStorage.getItem('username');
+
+    if (storedToken && storedUserId && storedUsername && !isLoggedIn) {
+      console.log('Frontend: Found stored credentials, attempting to re-login...');
+      // Re-hydrate state from local storage
+      setUsername(storedUsername);
+      setUserId(storedUserId);
+      setIsLoggedIn(true);
+      // Reset userSetOnBackend to false so the setUserInfo effect triggers
+      setUserSetOnBackend(false);
+      // Note: We don't need to call handleLogin here, as setting isLoggedIn will trigger
+      // the setUserInfo and joinRoom effects.
+    }
+  }, []); // Empty dependency array means this runs only once on initial mount
+
+  // Effect for emitting user info to the backend and waiting for acknowledgment
+  useEffect(() => {
     if (isLoggedIn && userId && username && !userSetOnBackend) {
       console.log('Frontend: Emitting setUserInfo to backend...');
       socket.emit('setUserInfo', { userId, username }, (response) => {
         if (response.status === 'ok') {
           console.log('Frontend: setUserInfo acknowledged by backend.');
-          setUserSetOnBackend(true); // Mark as set successfully
+          setUserSetOnBackend(true);
         } else {
           console.error('Frontend: setUserInfo failed:', response.message);
-          // Handle error, e.g., show an error message, or try again
           alert(`Failed to set user info on chat server: ${response.message}`);
-          // You might choose to log out or prevent joining a room if this fails critically
+          // If setting user info fails, it's safer to log out
+          handleLogout(false); // Log out without navigating back immediately
         }
       });
     }
-  }, [isLoggedIn, userId, username, userSetOnBackend]); // Dependencies for this effect
+  }, [isLoggedIn, userId, username, userSetOnBackend]);
 
-  // Join a room ONLY AFTER user is logged in, a room is set, AND user info is confirmed on backend
+  // Effect for joining a room (runs only after user info is confirmed on backend)
   useEffect(() => {
-    if (isLoggedIn && room && userSetOnBackend) { // ADDED userSetOnBackend condition
+    if (isLoggedIn && room && userSetOnBackend) {
       console.log(`Frontend: User ${username} (ID: ${userId}) joining room: ${room}`);
       socket.emit('joinRoom', room);
     }
-  }, [isLoggedIn, room, username, userId, userSetOnBackend]); // Reruns when these change
+  }, [isLoggedIn, room, username, userId, userSetOnBackend]);
 
-  // Handles sending a chat message
   const handleSendMessage = (e) => {
-    e.preventDefault(); // Prevent default form submission behavior
-    if (message.trim() && username && userId) { // Ensure all necessary data is present
+    e.preventDefault();
+    if (message.trim() && username && userId) {
       const msgData = {
-        // userId and username are not sent here; backend uses its stored info for the socket.
         content: message,
         room: room,
       };
-      socket.emit('chatMessage', msgData); // Emit the message to the server
-      setMessage(''); // Clear the message input field
+      socket.emit('chatMessage', msgData);
+      setMessage('');
     } else {
         console.warn('Frontend: Cannot send message. Missing content, username, or userId.');
-        // Optionally provide user feedback: alert('Please type a message and ensure you are logged in.');
     }
   };
 
-  // Handles user login
   const handleLogin = async (e) => {
-    e.preventDefault(); // Prevent default form submission behavior
+    e.preventDefault();
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // Required for CORS to work with cookies/credentials
+        credentials: 'include',
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const data = await response.json();
@@ -117,30 +125,52 @@ function MychatApp({ onBack }) {
         setUsername(data.username);
         setUserId(data._id);
         setIsLoggedIn(true);
-        // IMPORTANT: Reset userSetOnBackend to false so the setUserInfo useEffect triggers for the new login
-        setUserSetOnBackend(false);
-        localStorage.setItem('token', data.token); // Store token (for protecting API calls if you add them later)
+        setUserSetOnBackend(false); // Reset to trigger setUserInfo effect
+        // Store credentials in localStorage for persistence
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('userId', data._id);
+        localStorage.setItem('username', data.username);
       } else {
         alert(data.message || 'Login failed');
         console.error('Login failed:', data.message || 'Unknown error');
-        // In a real app, you'd show a user-friendly error message here (e.g., a toast or modal)
       }
     } catch (error) {
       console.error('Login network error:', error);
       alert('Login failed due to network error.');
-      // In a real app, you'd show a user-friendly error message here
+    }
+  };
+
+  // Modified handleLogout to accept an optional 'navigateBack' parameter
+  const handleLogout = (navigateBack = true) => {
+    console.log('Frontend: Logging out user...');
+    socket.emit('logout'); // Notify the backend
+    
+    // Clear all local state
+    setIsLoggedIn(false);
+    setUsername('');
+    setUserId('');
+    setUserSetOnBackend(false);
+    setMessages([]);
+    setOnlineUsers([]);
+    setRoom('general'); // Reset to default room
+    
+    // Clean up stored credentials
+    localStorage.removeItem('token');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('username');
+
+    if (navigateBack) {
+      onBack(); // Only navigate back if explicitly requested (e.g., by button click)
     }
   };
 
   const handleHelloClick = () => {
-    console.log('helloo!!!'); // Log message to console instead of alert()
-    // In a real app, you could show a custom modal or toast notification here
+    console.log('helloo!!!');
   };
 
-  // Render login/register form if not logged in
   if (!isLoggedIn) {
     return (
-      <div className="p-5 border border-gray-300 rounded-lg w-72 mx-auto mt-12 text-center shadow-lg">
+      <div className="p-5 border border-gray-300 rounded-lg w-72 mx-auto mt-12 text-center shadow-lg bg-white"> {/* Added bg-white for consistency */}
         <h2 className="text-2xl font-bold mb-4">Login / Register</h2>
         <form onSubmit={handleLogin} className="flex flex-col space-y-3">
           <input
@@ -168,13 +198,12 @@ function MychatApp({ onBack }) {
             </button>
             <button
               type="button"
-              onClick={handleHelloClick} // Using the handleHelloClick for the "Hello" button
+              onClick={handleHelloClick}
               className="flex-1 p-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               Hello
             </button>
           </div>
-          {/* Back button for login/register view, styled as an old-school button */}
           <button
             type="button"
             onClick={onBack}
@@ -189,16 +218,14 @@ function MychatApp({ onBack }) {
           >
             &lt;-- Back to Main
           </button>
-        </form> {/* ✅ Corrected: The closing form tag was missing here */}
-        {/* Under Construction message */}
+        </form>
         <p className="mt-4 text-sm text-gray-500">Under Construction</p>
       </div>
     );
   }
 
-  // Render chat interface if logged in
   return (
-    // Updated container to use flex layout for chat and user list
+    // Main container with gray-200 background
     <div className="flex h-[80vh] max-w-6xl mx-auto my-8 bg-white border border-gray-300 rounded-lg shadow-xl">
       {/* Chat Area (Main Content) */}
       <div className="flex flex-col flex-grow p-4">
@@ -206,22 +233,36 @@ function MychatApp({ onBack }) {
           <h1 className="text-3xl font-bold text-center flex-grow">
             Welcome, {username}! (Room: {room})
           </h1>
-          {/* Back button for chat view, styled as an old-school button */}
-          <button
-            type="button"
-            onClick={onBack}
-            className="
-              bg-gray-700 text-green-400 px-4 py-2 rounded-md
-              border-t-2 border-l-2 border-gray-600
-              border-b-2 border-r-2 border-gray-900
-              hover:bg-gray-600 hover:border-gray-900 hover:border-b-gray-600 hover:border-r-gray-600
-              transition-all duration-100 ease-in-out
-              cursor-pointer
-              ml-4
-            "
-          >
-            &lt;-- Back to Main
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onBack}
+              className="
+                bg-gray-700 text-green-400 px-4 py-2 rounded-md
+                border-t-2 border-l-2 border-gray-600
+                border-b-2 border-r-2 border-gray-900
+                hover:bg-gray-600 hover:border-gray-900 hover:border-b-gray-600 hover:border-r-gray-600
+                transition-all duration-100 ease-in-out
+                cursor-pointer
+              "
+            >
+              &lt;-- Back
+            </button>
+            <button
+              type="button"
+              onClick={() => handleLogout(true)} // Pass true to navigate back on button click
+              className="
+                bg-red-700 text-white px-4 py-2 rounded-md
+                border-t-2 border-l-2 border-red-600
+                border-b-2 border-r-2 border-red-900
+                hover:bg-red-600 hover:border-red-900 hover:border-b-red-600 hover:border-r-red-600
+                transition-all duration-100 ease-in-out
+                cursor-pointer
+              "
+            >
+              Logout
+            </button>
+          </div>
         </div>
         <div className="flex-grow overflow-y-auto border-b border-gray-200 pb-2 mb-4 text-left space-y-2">
           {messages.length === 0 ? (
@@ -229,7 +270,7 @@ function MychatApp({ onBack }) {
           ) : (
             messages.map((msg, index) => (
               <div
-                key={msg._id || index} // Use msg._id for a stable key, fallback to index
+                key={msg._id || index}
                 className={`p-2 rounded-lg ${
                   msg.sender === username
                     ? 'bg-blue-100 ml-auto text-right'
@@ -262,19 +303,17 @@ function MychatApp({ onBack }) {
         </form>
       </div>
 
-      {/* Online Users List */}
       <div className="w-64 bg-gray-50 border-l border-gray-200 p-4 flex flex-col">
         <h2 className="text-xl font-semibold mb-4 text-center">Online Users ({onlineUsers.length})</h2>
         <ul className="flex-grow overflow-y-auto space-y-2">
           {onlineUsers.length > 0 ? (
             onlineUsers.map((user) => (
               <li
-                key={user.userId} // Use userId as the key for uniqueness
+                key={user.userId}
                 className={`p-2 rounded-md ${
                   user.username === username ? 'bg-green-200 font-bold' : 'bg-white shadow-sm'
                 } flex items-center gap-2`}
               >
-                {/* Simple online indicator dot with pulse animation */}
                 <span className="relative flex h-3 w-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
