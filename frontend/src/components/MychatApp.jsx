@@ -17,8 +17,14 @@ function MychatApp({ onBack }) {
   const [room, setRoom] = useState('general');
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [userSetOnBackend, setUserSetOnBackend] = useState(false);
+  
+  // NEW: Hardcoded list of user IDs authorized for the private room
+  // In a real application, this would come from the server or a state management store.
+  const authorizedDevTeamUserIds = [
+      '67881a3ee83d2132a2441b17', // Replace with an actual user ID
+      '688b6cc36d6a6ffa0fdcc4f4'  // Replace with another authorized user ID
+  ];
 
-  // Effect for setting up Socket.IO listeners (runs once on mount)
   useEffect(() => {
     socket.on('message', (msg) => {
       setMessages((prevMessages) => [...prevMessages, msg]);
@@ -35,21 +41,26 @@ function MychatApp({ onBack }) {
 
     socket.on('authRequired', (msg) => {
         console.error("Frontend: Backend requires authentication:", msg);
-        // If backend says auth is required, force client-side logout
-        handleLogout(false); // Call handleLogout without navigating back immediately
+        handleLogout(false);
         alert(msg + " Please log in again.");
     });
+    
+    // NEW: Unauthorized access handler
+    socket.on('unauthorized', (msg) => {
+        console.error("Frontend: Unauthorized access attempt:", msg);
+        alert(msg);
+        setRoom('general');
+    });
 
-    // Cleanup function to remove event listeners when component unmounts
     return () => {
       socket.off('message');
       socket.off('historicalMessages');
       socket.off('usersOnline');
       socket.off('authRequired');
+      socket.off('unauthorized');
     };
   }, []);
 
-  // NEW EFFECT: Attempt to re-authenticate user from localStorage on component mount
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     const storedUserId = localStorage.getItem('userId');
@@ -57,18 +68,13 @@ function MychatApp({ onBack }) {
 
     if (storedToken && storedUserId && storedUsername && !isLoggedIn) {
       console.log('Frontend: Found stored credentials, attempting to re-login...');
-      // Re-hydrate state from local storage
       setUsername(storedUsername);
       setUserId(storedUserId);
       setIsLoggedIn(true);
-      // Reset userSetOnBackend to false so the setUserInfo effect triggers
       setUserSetOnBackend(false);
-      // Note: We don't need to call handleLogin here, as setting isLoggedIn will trigger
-      // the setUserInfo and joinRoom effects.
     }
-  }, []); // Empty dependency array means this runs only once on initial mount
+  }, []);
 
-  // Effect for emitting user info to the backend and waiting for acknowledgment
   useEffect(() => {
     if (isLoggedIn && userId && username && !userSetOnBackend) {
       console.log('Frontend: Emitting setUserInfo to backend...');
@@ -79,14 +85,12 @@ function MychatApp({ onBack }) {
         } else {
           console.error('Frontend: setUserInfo failed:', response.message);
           alert(`Failed to set user info on chat server: ${response.message}`);
-          // If setting user info fails, it's safer to log out
-          handleLogout(false); // Log out without navigating back immediately
+          handleLogout(false);
         }
       });
     }
   }, [isLoggedIn, userId, username, userSetOnBackend]);
 
-  // Effect for joining a room (runs only after user info is confirmed on backend)
   useEffect(() => {
     if (isLoggedIn && room && userSetOnBackend) {
       console.log(`Frontend: User ${username} (ID: ${userId}) joining room: ${room}`);
@@ -125,8 +129,7 @@ function MychatApp({ onBack }) {
         setUsername(data.username);
         setUserId(data._id);
         setIsLoggedIn(true);
-        setUserSetOnBackend(false); // Reset to trigger setUserInfo effect
-        // Store credentials in localStorage for persistence
+        setUserSetOnBackend(false);
         localStorage.setItem('token', data.token);
         localStorage.setItem('userId', data._id);
         localStorage.setItem('username', data.username);
@@ -140,27 +143,21 @@ function MychatApp({ onBack }) {
     }
   };
 
-  // Modified handleLogout to accept an optional 'navigateBack' parameter
   const handleLogout = (navigateBack = true) => {
     console.log('Frontend: Logging out user...');
-    socket.emit('logout'); // Notify the backend
-    
-    // Clear all local state
+    socket.emit('logout');
     setIsLoggedIn(false);
     setUsername('');
     setUserId('');
     setUserSetOnBackend(false);
     setMessages([]);
     setOnlineUsers([]);
-    setRoom('general'); // Reset to default room
-    
-    // Clean up stored credentials
+    setRoom('general');
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
     localStorage.removeItem('username');
-
     if (navigateBack) {
-      onBack(); // Only navigate back if explicitly requested (e.g., by button click)
+      onBack();
     }
   };
 
@@ -170,7 +167,7 @@ function MychatApp({ onBack }) {
 
   if (!isLoggedIn) {
     return (
-      <div className="p-5 border border-gray-300 rounded-lg w-72 mx-auto mt-12 text-center shadow-lg bg-white"> {/* Added bg-white for consistency */}
+      <div className="p-5 border border-gray-300 rounded-lg w-72 mx-auto mt-12 text-center shadow-lg bg-white">
         <h2 className="text-2xl font-bold mb-4">Login / Register</h2>
         <form onSubmit={handleLogin} className="flex flex-col space-y-3">
           <input
@@ -224,14 +221,48 @@ function MychatApp({ onBack }) {
     );
   }
 
+  // --- NEW: A list of rooms to render, filtered by authorization ---
+  const roomsToDisplay = ['general'];
+  if (userId && authorizedDevTeamUserIds.includes(userId)) {
+      roomsToDisplay.push('dev-team');
+  }
+
   return (
-    // Main container with gray-200 background
-    <div className="flex h-[80vh] max-w-6xl mx-auto my-8 bg-white border border-gray-300 rounded-lg shadow-xl">
+    <div className="flex h-[80vh] max-w-6xl mx-auto my-8 bg-gray-200 border border-gray-300 rounded-lg shadow-xl overflow-hidden">
+      {/* Rooms/Navigation Sidebar */}
+      <div className="w-48 bg-gray-100 p-4 border-r border-gray-300 flex flex-col">
+        <h2 className="text-xl font-bold mb-4">Rooms</h2>
+        <div className="space-y-2 flex-grow">
+            {roomsToDisplay.map((roomName) => ( // Use the filtered list here
+                <button
+                    key={roomName}
+                    onClick={() => setRoom(roomName)}
+                    className={`w-full text-left p-2 rounded-lg transition-colors duration-200 ${
+                        room === roomName
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                    }`}
+                >
+                    {roomName.charAt(0).toUpperCase() + roomName.slice(1)}
+                </button>
+            ))}
+        </div>
+        <div className="mt-auto pt-4 border-t border-gray-300">
+          <button
+            type="button"
+            onClick={() => handleLogout(true)}
+            className="w-full text-center px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+
       {/* Chat Area (Main Content) */}
-      <div className="flex flex-col flex-grow p-4">
+      <div className="flex flex-col flex-grow p-4 bg-white">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-bold text-center flex-grow">
-            Welcome, {username}! (Room: {room})
+            Welcome, {username}! (Room: {room.charAt(0).toUpperCase() + room.slice(1)})
           </h1>
           <div className="flex gap-2">
             <button
@@ -247,20 +278,6 @@ function MychatApp({ onBack }) {
               "
             >
               &lt;-- Back
-            </button>
-            <button
-              type="button"
-              onClick={() => handleLogout(true)} // Pass true to navigate back on button click
-              className="
-                bg-red-700 text-white px-4 py-2 rounded-md
-                border-t-2 border-l-2 border-red-600
-                border-b-2 border-r-2 border-red-900
-                hover:bg-red-600 hover:border-red-900 hover:border-b-red-600 hover:border-r-red-600
-                transition-all duration-100 ease-in-out
-                cursor-pointer
-              "
-            >
-              Logout
             </button>
           </div>
         </div>
@@ -303,6 +320,7 @@ function MychatApp({ onBack }) {
         </form>
       </div>
 
+      {/* Online Users List */}
       <div className="w-64 bg-gray-50 border-l border-gray-200 p-4 flex flex-col">
         <h2 className="text-xl font-semibold mb-4 text-center">Online Users ({onlineUsers.length})</h2>
         <ul className="flex-grow overflow-y-auto space-y-2">
